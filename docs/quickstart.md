@@ -324,6 +324,28 @@ patch.apply(data)
 print(data)  # {'some': {'other': 'thing', 'foo': {'bar': [1], 'else': 'thing'}}}
 ```
 
+The `path` and `from` members of patch operations may also be JSONPath query strings (any string starting with `$`), or compiled [`JSONPath`](api.md#jsonpath.JSONPath) instances. The operation is applied once for every node matched by the JSONPath against the current document, evaluated fresh each time the operation runs. This is convenient for filter-based selection, like updating an array element by content rather than index.
+
+```python
+from jsonpath import patch
+
+data = {
+    "categories": [
+        {"id": 1, "name": "fiction"},
+        {"id": 2, "name": "non-fiction"},
+    ]
+}
+
+patch.apply(
+    [{"op": "replace", "path": "$.categories[?(@.id == 1)].name", "value": "horror"}],
+    data,
+)
+print(data)
+# {'categories': [{'id': 1, 'name': 'horror'}, {'id': 2, 'name': 'non-fiction'}]}
+```
+
+A JSONPath that matches multiple nodes applies the operation to each. `remove` is processed in reverse document order so array indices remain valid as siblings are deleted. JSONPath queries used with `move` or `copy` must resolve to exactly one node.
+
 ## What's Next?
 
 Read about the [Query Iterators](query.md) API or [user-defined filter functions](advanced.md#function-extensions). Also see how to make extra data available to filters with [Extra Filter Context](advanced.md#filter-variables).

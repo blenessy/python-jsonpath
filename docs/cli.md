@@ -284,6 +284,27 @@ $ json patch /tmp/patch.json -f /tmp/target.json
 $ cat /tmp/patch.json | json patch - -f /tmp/target.json
 ```
 
+In addition to RFC 6901 JSON Pointer strings, the `path` and `from` members of patch operations may be JSONPath query strings - any string starting with `$`. Each operation is applied once for every node matching its JSONPath against the current document. For example, given this `target.json`:
+
+```json
+{
+  "categories": [
+    { "id": 1, "name": "fiction" },
+    { "id": 2, "name": "non-fiction" }
+  ]
+}
+```
+
+and this `patch.json`:
+
+```json
+[
+  { "op": "replace", "path": "$.categories[?(@.id == 1)].name", "value": "horror" }
+]
+```
+
+`json patch /tmp/patch.json -f /tmp/target.json` rewrites only the matching element. JSONPath queries used with `move` and `copy` must resolve to exactly one node.
+
 #### `-f` / `--file`
 
 The path to a file containing the target JSON document. If omitted or a hyphen (`-`), the target JSON document will be read from the standard input stream.
