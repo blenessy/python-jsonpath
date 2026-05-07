@@ -346,6 +346,27 @@ print(data)
 
 A JSONPath that matches multiple nodes applies the operation to each. `remove` is processed in reverse document order so array indices remain valid as siblings are deleted. JSONPath queries used with `move` or `copy` must resolve to exactly one node.
 
+The `test` operation also accepts a non-standard `undefined` member. When set to `true`, the test passes only if _path_ resolves to a non-existent property or array index (or, for a JSONPath query, matches no nodes). The `value` member is ignored when `undefined` is `true`. This is distinct from a `null` value, much like `undefined` is distinct from `null` in ECMAScript.
+
+```python
+from jsonpath import JSONPatch, patch
+
+# Pass: /b does not exist on the document.
+patch.apply(
+    [{"op": "test", "path": "/b", "undefined": True}],
+    {"a": 1},
+)
+
+# Fail: /a exists, even though its value is null.
+patch.apply(
+    [{"op": "test", "path": "/a", "undefined": True}],
+    {"a": None},
+)  # raises JSONPatchTestFailure
+
+# Builder API: pass undefined=True instead of value.
+JSONPatch().test("/b", undefined=True).apply({"a": 1})
+```
+
 ## What's Next?
 
 Read about the [Query Iterators](query.md) API or [user-defined filter functions](advanced.md#function-extensions). Also see how to make extra data available to filters with [Extra Filter Context](advanced.md#filter-variables).

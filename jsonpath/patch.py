@@ -5,6 +5,12 @@ operations may be JSONPath query strings (any string starting with `$`). When
 used, the JSONPath is evaluated against the target document at the time the
 operation is applied, and the operation is performed once for each matching
 node.
+
+The `test` operation also accepts a non-standard `undefined` member. When set
+to `true`, the test passes only if _path_ resolves to a non-existent property
+or array index (or, for a JSONPath query, matches no nodes). The `value`
+member is ignored when `undefined` is `true`. This is distinct from a `null`
+value, much like `undefined` is distinct from `null` in ECMAScript.
 """
 
 from __future__ import annotations
@@ -451,19 +457,31 @@ class OpCopy(Op):
 class OpTest(Op):
     """The JSON Patch _test_ operation."""
 
-    __slots__ = ("path", "value")
+    __slots__ = ("path", "value", "undefined")
 
     name = "test"
 
-    def __init__(self, path: _Target, value: object) -> None:
+    def __init__(
+        self, path: _Target, value: object = None, *, undefined: bool = False
+    ) -> None:
         self.path = path
         self.value = value
+        self.undefined = undefined
 
     def apply(
         self, data: Union[MutableSequence[object], MutableMapping[str, object]]
     ) -> Union[MutableSequence[object], MutableMapping[str, object]]:
         """Apply this patch operation to _data_."""
         pointers = _resolve_pointers(self.path, data)
+        if self.undefined:
+            if isinstance(self.path, _JSONPathTarget):
+                if pointers:
+                    raise JSONPatchTestFailure
+                return data
+            _, obj = pointers[0].resolve_parent(data)
+            if obj is not UNDEFINED:
+                raise JSONPatchTestFailure
+            return data
         if isinstance(self.path, _JSONPathTarget) and not pointers:
             raise JSONPatchTestFailure
         for pointer in pointers:
@@ -474,6 +492,8 @@ class OpTest(Op):
 
     def asdict(self) -> Dict[str, object]:
         """Return a dictionary representation of this operation."""
+        if self.undefined:
+            return {"op": self.name, "path": str(self.path), "undefined": True}
         return {"op": self.name, "path": str(self.path), "value": self.value}
 
 
@@ -589,10 +609,16 @@ class JSONPatch:
                     path=self._op_target(operation, "path", "copy", i),
                 )
             elif op == "test":
-                self.test(
-                    path=self._op_target(operation, "path", "test", i),
-                    value=self._op_value(operation, "value", "test", i),
-                )
+                if operation.get("undefined") is True:
+                    self.test(
+                        path=self._op_target(operation, "path", "test", i),
+                        undefined=True,
+                    )
+                else:
+                    self.test(
+                        path=self._op_target(operation, "path", "test", i),
+                        value=self._op_value(operation, "value", "test", i),
+                    )
             else:
                 raise JSONPatchError(
                     "expected 'op' to be one of 'add', 'remove', 'replace', "
@@ -818,7 +844,9 @@ class JSONPatch:
     def test(
         self: Self,
         path: Union[str, JSONPointer, JSONPath, CompoundJSONPath],
-        value: object,
+        value: object = None,
+        *,
+        undefined: bool = False,
     ) -> Self:
         """Append a test operation to this patch.
 
@@ -826,14 +854,18 @@ class JSONPatch:
             path: A string representation of a JSON Pointer or JSONPath, a
                 parsed `JSONPointer`, or a compiled `JSONPath` /
                 `CompoundJSONPath`.
-            value: The object to test.
+            value: The object to test. Ignored when _undefined_ is `True`.
+            undefined: Non-standard. When `True`, the test passes only if
+                _path_ resolves to a non-existent property or array index
+                (or, for a JSONPath query, matches no nodes). _value_ is
+                ignored.
 
         Returns:
             This `JSONPatch` instance, so we can build a JSON Patch by chaining
                 calls to JSON Patch operation methods.
         """
         target = self._ensure_target(path)
-        self.ops.append(OpTest(path=target, value=value))
+        self.ops.append(OpTest(path=target, value=value, undefined=undefined))
         return self
 
     def apply(
