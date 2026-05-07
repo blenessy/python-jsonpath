@@ -217,7 +217,10 @@ def test_construct_missing_value() -> None:
 
 
 def test_construct_pointer_not_a_string() -> None:
-    msg = "expected a JSON Pointer string for 'path', found 'int' (add:0)"
+    msg = (
+        "expected a JSON Pointer or JSONPath string for 'path', "
+        "found 'int' (add:0)"
+    )
     with pytest.raises(JSONPatchError, match=re.escape(msg)):
         JSONPatch([{"op": "add", "path": 5, "value": "foo"}])
 

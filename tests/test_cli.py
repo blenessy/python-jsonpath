@@ -595,3 +595,38 @@ def test_json_patch(
         patched = json.load(fd)
 
     assert patched["categories"][0]["name"] == "foo"
+
+
+def test_json_patch_with_jsonpath_target(
+    parser: argparse.ArgumentParser,
+    tmp_path: pathlib.Path,
+    sample_target: str,
+    outfile: str,
+) -> None:
+    """A patch operation can target nodes with a JSONPath query string."""
+    mock_patch_path = tmp_path / "patch.json"
+    patch_doc = [
+        {
+            "op": "replace",
+            "path": "$.categories[?(@.name == 'footwear')].products[*].price",
+            "value": 0,
+        }
+    ]
+    with mock_patch_path.open("w") as fd:
+        json.dump(patch_doc, fd)
+
+    args = parser.parse_args(
+        ["patch", str(mock_patch_path), "-f", sample_target, "-o", outfile]
+    )
+
+    handle_patch_command(args)
+    args.output.flush()
+
+    with open(outfile, "r") as fd:
+        patched = json.load(fd)
+
+    footwear = next(c for c in patched["categories"] if c["name"] == "footwear")
+    headwear = next(c for c in patched["categories"] if c["name"] == "headwear")
+    assert all(p["price"] == 0 for p in footwear["products"])
+    # Other categories untouched.
+    assert all(p["price"] != 0 for p in headwear["products"])

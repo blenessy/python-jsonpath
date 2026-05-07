@@ -124,7 +124,11 @@ def patch_sub_command(parser: argparse.ArgumentParser) -> None:  # noqa: D103
         "patch",
         type=argparse.FileType(mode="rb"),
         metavar="PATCH",
-        help="File containing an RFC 6902 formatted JSON Patch.",
+        help=(
+            "File containing an RFC 6902 formatted JSON Patch. "
+            "The 'path' and 'from' members of patch operations may be either "
+            "a JSON Pointer or a JSONPath query (any string starting with '$')."
+        ),
     )
 
     parser.add_argument(
