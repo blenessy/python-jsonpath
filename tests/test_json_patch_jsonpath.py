@@ -213,3 +213,87 @@ def test_re_evaluation_per_op() -> None:
 def test_invalid_jsonpath_message_includes_op_index() -> None:
     with pytest.raises(JSONPatchError, match=re.escape("(replace:0)")):
         JSONPatch([{"op": "replace", "path": "$.[", "value": 1}])
+
+
+def test_add_creates_missing_property_on_existing_parent() -> None:
+    """An add op with a JSONPath whose tail is a singular name selector
+    creates the property when the parent exists but the leaf does not."""
+    data = {"foo": [{}]}
+    result = patch.apply(
+        [{"op": "add", "path": "$.foo[0].bar", "value": "baz"}],
+        data,
+    )
+    assert result == {"foo": [{"bar": "baz"}]}
+
+
+def test_add_creates_missing_property_at_root_level() -> None:
+    data: dict = {}
+    result = patch.apply(
+        [{"op": "add", "path": "$.foo", "value": 1}],
+        data,
+    )
+    assert result == {"foo": 1}
+
+
+def test_add_creates_array_slot_at_index() -> None:
+    """Adding at $.arr[3] when arr has length 3 should append (RFC 6902
+    allows index == len) — same semantics as JSON Pointer /arr/3."""
+    data = {"arr": [1, 2, 3]}
+    result = patch.apply(
+        [{"op": "add", "path": "$.arr[3]", "value": 4}],
+        data,
+    )
+    assert result == {"arr": [1, 2, 3, 4]}
+
+
+def test_add_with_filter_tail_does_not_invent_a_path() -> None:
+    """A non-singular tail (filter) cannot define a new location; the op is a
+    no-op when no nodes match."""
+    data = {"items": [{"v": 1}]}
+    result = patch.apply(
+        [{"op": "add", "path": "$.items[?(@.v == 99)].extra", "value": True}],
+        data,
+    )
+    assert result == {"items": [{"v": 1}]}
+
+
+def test_add_creates_missing_property_for_each_parent_match() -> None:
+    """When the parent path is non-singular, the operation runs once per
+    parent match and creates the trailing key on each."""
+    data = {"items": [{"id": 1}, {"id": 2}]}
+    result = patch.apply(
+        [{"op": "add", "path": "$.items[*].active", "value": True}],
+        data,
+    )
+    assert result == {
+        "items": [{"id": 1, "active": True}, {"id": 2, "active": True}]
+    }
+
+
+def test_addne_creates_missing_property() -> None:
+    data = {"foo": {}}
+    result = patch.apply(
+        [{"op": "addne", "path": "$.foo.bar", "value": 1}],
+        data,
+    )
+    assert result == {"foo": {"bar": 1}}
+
+
+def test_addap_creates_missing_property() -> None:
+    data = {"foo": {}}
+    result = patch.apply(
+        [{"op": "addap", "path": "$.foo.bar", "value": 1}],
+        data,
+    )
+    assert result == {"foo": {"bar": 1}}
+
+
+def test_add_falls_back_only_when_no_match() -> None:
+    """When the JSONPath does match an existing node, add inserts there as
+    usual rather than treating it as a missing key."""
+    data = {"items": [10, 20, 30]}
+    result = patch.apply(
+        [{"op": "add", "path": "$.items[1]", "value": 15}],
+        data,
+    )
+    assert result == {"items": [10, 15, 20, 30]}

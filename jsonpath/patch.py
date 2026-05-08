@@ -23,6 +23,7 @@ from typing import Mapping
 from typing import MutableMapping
 from typing import MutableSequence
 from typing import Optional
+from typing import Tuple
 from typing import TypeVar
 from typing import Union
 
@@ -38,6 +39,9 @@ from jsonpath.path import CompoundJSONPath
 from jsonpath.path import JSONPath
 from jsonpath.pointer import UNDEFINED
 from jsonpath.pointer import JSONPointer
+from jsonpath.segments import JSONPathChildSegment
+from jsonpath.selectors import IndexSelector
+from jsonpath.selectors import NameSelector
 
 if TYPE_CHECKING:
     from jsonpath.env import JSONPathEnvironment
@@ -70,6 +74,62 @@ class _JSONPathTarget:
         """Resolve this JSONPath query to a list of JSON Pointers."""
         return [
             JSONPointer.from_match(match) for match in self.compiled.finditer(data)
+        ]
+
+    def trailing_key(self) -> Optional[Tuple[JSONPath, Union[str, int]]]:
+        """Return _(parent_path, key)_ if this query's last segment is a single
+        name or index selector; otherwise return `None`.
+
+        Used by _add_-like operations to fall back to the parent location when
+        a JSONPath query selects a node that does not yet exist.
+        """
+        if not isinstance(self.compiled, JSONPath):
+            return None
+
+        segments = self.compiled.segments
+        if not segments:
+            return None
+
+        last = segments[-1]
+        if not isinstance(last, JSONPathChildSegment):
+            return None
+        if len(last.selectors) != 1:
+            return None
+
+        selector = last.selectors[0]
+        key: Union[str, int]
+        if isinstance(selector, NameSelector):
+            key = selector.name
+        elif isinstance(selector, IndexSelector):
+            key = selector.index
+        else:
+            return None
+
+        parent = JSONPath(
+            env=self.compiled.env,
+            segments=segments[:-1],
+            pseudo_root=self.compiled.pseudo_root,
+        )
+        return parent, key
+
+    def resolve_for_add(
+        self,
+        data: Union[MutableSequence[object], MutableMapping[str, object]],
+    ) -> List[JSONPointer]:
+        """Like `resolve`, but if the query matches no nodes and ends with a
+        singular name or index selector, return pointers built from the parent
+        path plus the trailing key — so that _add_-like operations can create a
+        new property or array slot."""
+        pointers = self.resolve(data)
+        if pointers:
+            return pointers
+        info = self.trailing_key()
+        if info is None:
+            return []
+        parent_path, key = info
+        return [
+            JSONPointer.from_parts(tuple(match.parts) + (key,))
+            for match in parent_path.finditer(data)
         ]
 
 
@@ -139,7 +199,11 @@ class OpAdd(Op):
         self, data: Union[MutableSequence[object], MutableMapping[str, object]]
     ) -> Union[MutableSequence[object], MutableMapping[str, object]]:
         """Apply this patch operation to _data_."""
-        for pointer in _resolve_pointers(self.path, data):
+        if isinstance(self.path, _JSONPathTarget):
+            pointers = self.path.resolve_for_add(data)
+        else:
+            pointers = [self.path]
+        for pointer in pointers:
             data = self._apply(data, pointer)
         return data
 
